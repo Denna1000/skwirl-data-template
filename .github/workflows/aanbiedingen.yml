@@ -1,0 +1,105 @@
+# Aanbiedingen ophalen met Claude.
+# - Werkdagen ±9:30: de Mac haalt de folders op die GitHub niet mag ophalen (bron/folders.json) -> volledige scan.
+# - Zaterdag 08:00: volledige scan met wat er dan is.
+# - Direct als je in de app een vast product toevoegt, wijzigt of op "Zoek nu" tikt: snelle scan voor dat product.
+# - "Nu zoeken" op Vandaag: direct een volledige scan.
+# - Met de hand: Actions → Aanbiedingen → Run workflow.
+name: Aanbiedingen
+
+on:
+  schedule:
+    - cron: '0 7 * * 6'
+  workflow_dispatch:
+    inputs:
+      products:
+        description: "Alleen deze product-id's (met komma's). Leeg = volledige scan"
+        required: false
+  push:
+    branches: [main]
+    paths: [household.json, bron/folders.json]
+
+permissions:
+  contents: write
+  actions: write    # om vanuit een push een scan met Claude te starten
+  id-token: write   # nodig voor de Claude-app om in te loggen bij GitHub
+
+concurrency:
+  group: aanbiedingen
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    # bij een push alleen als de app iets aan producten veranderde of om een scan vroeg (niet bij elke afgetikte boodschap)
+    # niet in de lege startversie zelf draaien, alleen in je eigen kopie
+    if: "!endsWith(github.repository, '-template') && (github.event_name != 'push' || contains(github.event.head_commit.message, 'product') || contains(github.event.head_commit.message, 'Folders van de Mac'))"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 2
+
+      - name: Wat moet er gescand worden?
+        id: what
+        env:
+          EVENT: ${{ github.event_name }}
+          MSG: ${{ github.event.head_commit.message }}
+          INPUT_PRODUCTS: ${{ github.event.inputs.products }}
+        run: |
+          echo "today=$(date +%F)" >> "$GITHUB_OUTPUT"
+          # alleen ketens met een gevolgde winkel; de rest negeert de scan
+          echo "chains=$(node -e "const h=require('./household.json');console.log([...new Set(h.stores.filter(s=>s.follow).map(s=>s.chain))].join(', '))")" >> "$GITHUB_OUTPUT"
+          if [ "$EVENT" = "push" ] && echo "$MSG" | grep -q "Folders van de Mac"; then
+            echo "mode=volledig" >> "$GITHUB_OUTPUT"; echo "ids=" >> "$GITHUB_OUTPUT"
+          elif [ "$EVENT" = "push" ]; then
+            node scripts/changed-products.mjs
+          elif [ -n "$INPUT_PRODUCTS" ]; then
+            echo "ids=$(echo "$INPUT_PRODUCTS" | tr -cd 'a-zA-Z0-9,_-')" >> "$GITHUB_OUTPUT"
+            echo "mode=snel" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=volledig" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Folders ophalen (zonder Claude, een paar seconden)
+        if: steps.what.outputs.mode == 'volledig' || steps.what.outputs.ids != ''
+        env:
+          IDS: ${{ steps.what.outputs.ids }}
+        run: node scripts/collect.mjs "$IDS"
+
+      - name: Snelle koppeling op naam (meteen in de app)
+        if: steps.what.outputs.mode == 'volledig' || steps.what.outputs.ids != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/quick-match.mjs > quick.json && node scripts/save-deals.mjs snel quick.json
+
+      # De Claude-actie werkt niet bij push-events. Na een push (app of Mac) staan de snelle koppelingen al in de app;
+      # daarna starten we dezelfde workflow handmatig (workflow_dispatch) voor de controle door Claude.
+      - name: Scan met Claude starten
+        if: github.event_name == 'push' && (steps.what.outputs.mode == 'volledig' || steps.what.outputs.ids != '')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IDS: ${{ steps.what.outputs.ids }}
+        run: gh workflow run aanbiedingen.yml --repo "$GITHUB_REPOSITORY" --ref main -f products="$IDS"
+
+      - name: Claude koppelt de aanbiedingen
+        if: github.event_name != 'push' && (steps.what.outputs.mode == 'volledig' || steps.what.outputs.ids != '')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # voor tussentijds opslaan per winkel
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            Lees SCAN.md en voer de opdracht uit.
+            Modus: ${{ steps.what.outputs.mode }}
+            Producten: ${{ steps.what.outputs.ids || 'alle' }}
+            Ketens: ${{ steps.what.outputs.chains }}
+            Vandaag is het ${{ steps.what.outputs.today }}. Schrijf alleen deals.json; commit en push niet zelf.
+          claude_args: --max-turns 50 --allowedTools "Read,Write,Edit,Glob,WebSearch,Bash(node scripts/fetch-text.mjs:*),Bash(node scripts/save-deals.mjs:*),Bash(node -e:*)"
+
+      - name: deals.json opslaan
+        if: github.event_name != 'push' && (steps.what.outputs.mode == 'volledig' || steps.what.outputs.ids != '')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MODE: ${{ steps.what.outputs.mode }}
+        # via de GitHub API in plaats van git push: de app schrijft tegelijk en dat botste steeds
+        run: node scripts/save-deals.mjs "$MODE"

@@ -1,0 +1,74 @@
+{
+  "version": 1,
+  "addresses": [],
+  "stores": [
+    {
+      "id": "bol",
+      "chain": "bol",
+      "name": "bol.com",
+      "place": "Online",
+      "type": "Online",
+      "online": true,
+      "follow": true
+    }
+  ],
+  "chains": {
+    "ah": {
+      "name": "Albert Heijn",
+      "kind": "super"
+    },
+    "jumbo": {
+      "name": "Jumbo",
+      "kind": "super"
+    },
+    "lidl": {
+      "name": "Lidl",
+      "kind": "super"
+    },
+    "vomar": {
+      "name": "Vomar",
+      "kind": "super"
+    },
+    "aldi": {
+      "name": "Aldi",
+      "kind": "super"
+    },
+    "dekamarkt": {
+      "name": "DekaMarkt",
+      "kind": "super"
+    },
+    "plus": {
+      "name": "Plus",
+      "kind": "super"
+    },
+    "dirk": {
+      "name": "Dirk",
+      "kind": "super"
+    },
+    "ekoplaza": {
+      "name": "Ekoplaza",
+      "kind": "bio"
+    },
+    "kruidvat": {
+      "name": "Kruidvat",
+      "kind": "drogist"
+    },
+    "etos": {
+      "name": "Etos",
+      "kind": "drogist"
+    },
+    "gamma": {
+      "name": "Gamma",
+      "kind": "bouw"
+    },
+    "praxis": {
+      "name": "Praxis",
+      "kind": "bouw"
+    },
+    "bol": {
+      "name": "bol.com",
+      "kind": "online"
+    }
+  },
+  "products": []
+}
