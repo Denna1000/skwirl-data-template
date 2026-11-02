@@ -26,6 +26,7 @@ await Promise.all(chains.map(async (c) => {
     if (VIA_MAC(u)) { // deze site weigert GitHub: gebruik wat de Mac ophaalde
       const m = macFresh && mac.chains[c] && mac.chains[c].url === u ? mac.chains[c] : null;
       if (!m) return { u, r: { ok: false, status: 'geen verse folder van de Mac', lines: [] } };
+      if (m.stale) return { u, r: { ok: false, status: 'de Mac vond alleen de folder van vorige week; zoek deze keten met WebSearch', lines: [] } };
       const ws = words; let lines = m.lines;
       if (ws.length) { const keep = new Set(); lines.forEach((l, i) => { if (ws.some((w) => l.toLowerCase().includes(w))) for (let j = i - 2; j <= i + 2; j++) if (j >= 0 && j < lines.length) keep.add(j); }); lines = [...keep].sort((a, b) => a - b).map((i) => m.lines[i]); }
       return { u: `${u} (via de Mac, ${new Date(mac.fetchedAt).toLocaleString('nl-NL')})`, r: { ok: true, status: 200, lines } };
